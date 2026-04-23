@@ -149,51 +149,49 @@ def verify(original_blocks, lengths, encrypted, d, n, block_size=BLOCK_SIZE):
  
 # 5. FAKTORYZACJA (test czasowy)
  
-
-def trial_division(n):
+def pollard_rho(n, max_seconds=360.0):
     """
-    Faktoryzacja przez próbne dzielenie.
-    Zwraca (p, q, iteracje) lub (None, None, iteracje) jeśli nie znaleziono.
-    """
-    iterations = 0
-    if n % 2 == 0:
-        return 2, n // 2, 1
-    i = 3
-    while i * i <= n:
-        iterations += 1
-        if n % i == 0:
-            return i, n // i, iterations
-        i += 2
-    return None, None, iterations
-
-def trial_division_timed(n, max_seconds=360.0):
-    """
-    Faktoryzacja przez próbne dzielenie z limitem czasu.
+    Faktoryzacja metodą Pollarda rho (algorytm Floyda).
     Zwraca (p, q, iteracje, przekroczono_czas).
     """
-    iterations = 0
-    deadline = time.perf_counter() + max_seconds
     if n % 2 == 0:
         return 2, n // 2, 1, False
-    i = 3
-    while i * i <= n:
-        iterations += 1
-        if n % i == 0:
-            return i, n // i, iterations, False
-        i += 2
-        if iterations % 500_000 == 0 and time.perf_counter() > deadline:
-            return None, None, iterations, True
+
+    deadline = time.perf_counter() + max_seconds
+    iterations = 0
+
+    #  różne wartości c przy braku sukcesu
+    for c in range(1, 20):
+        x = random.randint(2, n - 1)
+        y = x
+        d = 1
+
+        while d == 1:
+            iterations += 1
+            x = (x * x + c) % n          # krok 1
+            y = (y * y + c) % n
+            y = (y * y + c) % n          # krok 2
+            d = math.gcd(abs(x - y), n)
+
+            if iterations % 100_000 == 0 and time.perf_counter() > deadline:
+                return None, None, iterations, True
+
+        if d != n:
+            return d, n // d, iterations, False
+        # d == n to cykl bez znalezienia czynnika — próbuj z innym c
+
     return None, None, iterations, False
+
 
 def factorization_timing_test():
     """
-    Dla każdego rozmiaru: generujemy n = p*q i mierzymy czas trial division.
+    Dla każdego rozmiaru: generujemy n = p*q i mierzymy czas Pollarda rho.
     """
-    bit_sizes = [32, 40, 48, 56, 64, 72, 80, 88]
+    bit_sizes = [32, 40, 48, 56, 64, 72, 80, 88, 96, 108, 116]
     results = []
 
     print("\n" + "="*65)
-    print("FAKTORYZACJA RSA - Test czasowy (trial division, limit czasu)")
+    print("FAKTORYZACJA RSA - Test czasowy (Pollard rho, limit czasu)")
     print("="*65)
     print(f"{'Bity':>6} | {'Czas [s]':>12} | {'Iteracje':>14} | {'Sukces':>7}")
     print("-"*65)
@@ -207,7 +205,7 @@ def factorization_timing_test():
         n_test = p * q
 
         start = time.perf_counter()
-        found_p, found_q, iters, timeout = trial_division_timed(n_test, max_seconds=360.0)
+        found_p, found_q, iters, timeout = pollard_rho(n_test, max_seconds=360.0)
         elapsed = time.perf_counter() - start
 
         success = (found_p is not None)
@@ -220,8 +218,6 @@ def factorization_timing_test():
 
  
 # 6. DOPASOWANIE KRZYWYCH 
- 
-
 def fit_curves(results):
     """
     Próbuje dopasować funkcję potęgową i wykładniczą do wyników.
@@ -275,34 +271,71 @@ def fit_curves(results):
     r2_exp = 1 - ss_res_exp / ss_tot if ss_tot != 0 else 0
 
     print("\n  Dopasowanie krzywych  ")
-    print(f"  Potęgowa:    t = {a_pow:.4e} * x^{b_pow:.3f}   R2 = {r2_pow:.4f}")
-    print(f"  Wykładnicza: t = {a_exp:.4e} * e^({b_exp:.4f}*x)  R2 = {r2_exp:.4f}")
+    print(f"  Potęgowa:    t = {a_pow:.4e} * x^{b_pow:.3f}   R² = {r2_pow:.4f}")
+    print(f"  Wykładnicza: t = {a_exp:.4e} * e^({b_exp:.4f}*x)  R² = {r2_exp:.4f}")
 
     winner = "potęgowa" if r2_pow > r2_exp else "wykładnicza"
+    print(f"  Lepsze dopasowanie: {winner}")
 
-# 7. WYKRES FAKTORYZACJI
+    return a_pow, b_pow, r2_pow, a_exp, b_exp, r2_exp, xs, ys
+
+# 7. WYKRES Z DOPASOWANIEM KRZYWYCH
+def plot_curve_fit(fit_result, out_png="curve_fit_result.png"):
+    """Rysuje dane faktoryzacji + dopasowane krzywe potęgową i wykładniczą."""
+    a_pow, b_pow, r2_pow, a_exp, b_exp, r2_exp, xs, ys = fit_result
+
+    x_dense = [xs[0] + (xs[-1] - xs[0]) * i / 200 for i in range(201)]
+    y_pow = [a_pow * x ** b_pow for x in x_dense]
+    y_exp = [a_exp * math.exp(b_exp * x) for x in x_dense]
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    ax.scatter(xs, ys, color='steelblue', s=70, zorder=5,
+               label='Dane (Pollard rho)')
+    ax.plot(x_dense, y_pow, color='darkorange', linewidth=2,
+            label=f'Potęgowa: {a_pow:.2e}·x^{b_pow:.2f}  (R²={r2_pow:.4f})')
+    ax.plot(x_dense, y_exp, color='green', linewidth=2, linestyle='--',
+            label=f'Wykładnicza: {a_exp:.2e}·e^({b_exp:.4f}·x)  (R²={r2_exp:.4f})')
+
+    ax.set_xlabel('Rozmiar klucza (bity)', fontsize=12)
+    ax.set_ylabel('Czas faktoryzacji (s)', fontsize=12)
+    ax.set_title('Dopasowanie krzywych — faktoryzacja RSA (Pollard rho)',
+                 fontsize=14, fontweight='bold')
+    ax.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
+    ax.legend(fontsize=10)
+    fig.tight_layout()
+    fig.savefig(out_png, dpi=150)
+    print(f"Wykres dopasowania krzywych zapisany do: {out_png}")
+
+
+# 8. WYKRES FAKTORYZACJI
 def plot_factorization(results, out_png="factorization_result.png"):
     """Rysuje wykres: rozmiar klucza (bity) -> czas faktoryzacji."""
     bits = [r[0] for r in results]
     times = [r[1] for r in results]
     success = [r[3] for r in results]
 
-    plt.figure(figsize=(8, 5))
-    plt.plot(bits, times, marker='o', label='czas faktoryzacji')
+    ok_bits  = [b for b, ok in zip(bits, success) if ok]
+    ok_times = [t for t, ok in zip(times, success) if ok]
+    to_bits  = [b for b, ok in zip(bits, success) if not ok]
+    to_times = [t for t, ok in zip(times, success) if not ok]
 
-    # zaznacz TIMEOUT-y
-    for b, t, ok in zip(bits, times, success):
-        if not ok:
-            plt.scatter(b, t, color='red', zorder=5)
+    fig, ax = plt.subplots(figsize=(10, 6))
 
-    plt.xlabel('Rozmiar klucza (bity)')
-    plt.ylabel('Czas faktoryzacji (s)')
-    plt.title('Czas faktoryzacji RSA (trial division)')
-    plt.yscale('log')
-    plt.grid(True, which='both', linestyle='--', linewidth=0.5)
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(out_png)
+    ax.plot(ok_bits, ok_times, marker='o', linewidth=2,
+            color='steelblue', label='Pollard rho — sukces')
+
+    if to_bits:
+        ax.scatter(to_bits, to_times, marker='X', s=100,
+                   color='crimson', zorder=5, label='TIMEOUT')
+
+    ax.set_xlabel('Rozmiar klucza (bity)', fontsize=12)
+    ax.set_ylabel('Czas faktoryzacji (s)', fontsize=12)
+    ax.set_title('Czas faktoryzacji RSA — Pollard rho', fontsize=14, fontweight='bold')
+    ax.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
+    ax.legend(fontsize=11)
+    fig.tight_layout()
+    fig.savefig(out_png, dpi=150)
     print(f"\nWykres zapisany do: {out_png}")
 
 
@@ -327,7 +360,7 @@ def main():
         print(f"  Blok {i+1}: '{b[:l]}' (padding: '{b}') -> liczba = {m_val}")
 
     #   Generowanie kluczy  
-    print("\nGenerowanie kluczy RSA (2048 bitów)")
+    print("\nGenerowanie kluczy RSA")
     t0 = time.perf_counter()
     n, e, d, p, q = generate_rsa_keys(key_bits=KEY_BITS)
     t_keygen = time.perf_counter() - t0
@@ -356,11 +389,15 @@ def main():
     #   Test faktoryzacji
     results = factorization_timing_test()
 
-    #   Dopasowanie krzywych  
-    fit_curves(results)
+    #   Dopasowanie krzywych
+    fit_result = fit_curves(results)
 
-    #   Wykres  
+    #   Wykres faktoryzacji
     plot_factorization(results)
+
+    #   Wykres z dopasowaniem krzywych
+    if fit_result:
+        plot_curve_fit(fit_result)
 
     print("\n" + "="*65)
     print("Koniec programu.")
