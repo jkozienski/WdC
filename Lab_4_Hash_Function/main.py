@@ -1,30 +1,13 @@
-"""
-Implementacja SHA-256 krok po kroku.
 
-Uwagi do sprawozdania:
-- Padding sluzy aby dlugosc wiadomosci byla wielokrotnoscia 512 bitow
-  (SHA-256 przetwarza dane w blokach po 512 bitow). Dopisanie '1' a potem
-  zer oraz dlugosci oryginalnej wiadomosci na koncu (64 bity) sprawia,
-  ze dwie rozne wiadomosci nie moga po paddingu wygladac tak samo.
-- Rozszerzenie 16 slow do 64 slow w message schedule ma rozpropagowac
-  kazdy bit wejscia na wiele pozycji przed kompresja (efekt lawinowy).
-- Stale H0..H7 oraz K[0..63] to pierwsze 32 bity czesci ulamkowych
-  pierwiastkow (kwadratowych / szesciennych) kolejnych liczb pierwszych.
-  Uzywa sie ich zamiast "wymyslonych" liczb, zeby bylo widac, ze nie
-  zostawiono w nich zadnego ukrytego tylnego wejscia (nothing-up-my-sleeve).
-"""
-
-# ----- stale algorytmu -----
-
-# H0..H7: pierwsze 32 bity czesci ulamkowej pierwiastkow kwadratowych
-# pierwszych 8 liczb pierwszych (2, 3, 5, 7, 11, 13, 17, 19)
+# H0..H7
+# 8 liczb pierwszych (2, 3, 5, 7, 11, 13, 17, 19)
 H_INIT = [
     0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
     0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
 ]
 
-# K[0..63]: pierwspyt
-# pierwszych 64 liczb pierwszych (2..311) - tzw. stale rundowe
+# K[0..63]
+# pierwszych 64 liczb pierwszych (2..311) 
 K = [
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
     0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
@@ -36,7 +19,7 @@ K = [
     0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
 ]
 
-MASK32 = 0xFFFFFFFF  # maska do obciecia wyniku do 32 bitow (arytmetyka mod 2^32)
+MASK32 = 0xFFFFFFFF  # maska do obciecia wyniku do 32 bitow 
 
 
 # ----- operacje bitowe na slowach 32-bitowych -----
@@ -55,18 +38,10 @@ def shr(x: int, n: int) -> int:
 # ----- kroki algorytmu -----
 
 def preprocess(message: bytes) -> bytes:
-    """
-    Krok 1 - padding.
-    Dopisujemy bit '1', potem zera, a na koncu 64-bitowa (big-endian)
-    dlugosc oryginalnej wiadomosci w bitach. Calosc ma miec dlugosc
-    bedaca wielokrotnoscia 512 bitow (64 bajtow).
-    """
     original_bit_len = len(message) * 8
 
-    # bit '1' + 7 zer = bajt 0x80
     padded = message + b'\x80'
 
-    # dopelnienie zerami, zeby po dodaniu 8 bajtow dlugosci dac wielokrotnosc 64 bajtow
     while (len(padded) % 64) != 56:
         padded += b'\x00'
 
@@ -77,8 +52,7 @@ def preprocess(message: bytes) -> bytes:
 
 def build_message_schedule(block: bytes) -> list:
     """
-    Krok 5 - tworzenie tablicy w[0..63] dla jednego 512-bitowego bloku.
-    Pierwsze 16 slow to surowe dane z bloku, kolejne liczone ze wzoru.
+    Tworzenie tablicy w[0..63] dla jednego 512-bitowego bloku.
     """
     w = [0] * 64
     # 16 slow po 32 bity = 64 bajty bloku
@@ -94,8 +68,7 @@ def build_message_schedule(block: bytes) -> list:
 
 def compress(h: list, w: list) -> list:
     """
-    Krok 6 - petla kompresji dla jednego bloku.
-    Mutujemy zmienne a..h, na koniec dodajemy je do aktualnych wartosci h0..h7.
+    Petla kompresji dla jednego bloku.
     """
     a, b, c, d, e, f, g, hh = h
 
@@ -130,7 +103,6 @@ def compress(h: list, w: list) -> list:
 
 
 def sha256(message) -> str:
-    """Pelne SHA-256: zwraca hash w postaci hex-stringa (64 znaki = 256 bitow)."""
     if isinstance(message, str):
         message = message.encode('utf-8')
 
@@ -146,7 +118,7 @@ def sha256(message) -> str:
     return ''.join(f'{value:08x}' for value in h)
 
 
-# ----- narzedzia dodatkowe (dystans Hamminga) -----
+# dystans Hamminga
 
 def hamming_distance_hex(hex_a: str, hex_b: str) -> int:
     """Dystans Hamminga miedzy dwoma hashami zapisanymi jako hex - liczony na bitach."""
@@ -155,12 +127,11 @@ def hamming_distance_hex(hex_a: str, hex_b: str) -> int:
     return (a ^ b).bit_count()
 
 
-# ----- demonstracja -----
 
 if __name__ == "__main__":
     import hashlib
 
-    # 1) Weryfikacja na "hello world"
+    # 1) Weryfikacja algorytmu
     text = "hello world"
     mine = sha256(text)
     ref = hashlib.sha256(text.encode()).hexdigest()
@@ -171,8 +142,7 @@ if __name__ == "__main__":
     print(f'Zgodne: {mine == ref}')
     print()
 
-    # 2) Efekt lawinowy - pary wiadomosci rozniace sie drobnie,
-    #    patrzymy ile bitow hasha sie zmienia (dystans Hamminga).
+    # 2) Pary wiadomosci rozniace sie niewiele
     pairs = [
         ("hello world",       "hello world!"),
         ("hello world",       "Hello world"),
@@ -216,3 +186,56 @@ if __name__ == "__main__":
     avg = sum(distances) / len(distances)
     print("-" * 110)
     print(f"Srednia: {avg:.2f} / 256 (oczekiwane ~128 dla dobrego hasha)")
+
+    # 3) Czy mozna skrocic tekst "dowolnej" dlugosci?
+    import os
+
+    print()
+    print("Test dlugosci wejscia:")
+    print(f'{"zadane bity":>12} {"realne bajty":>14} {"dl. skrotu [bit]":>18}   skrot')
+    print("-" * 110)
+
+    bit_lengths = [1, 32, 128, 512, 1024]
+    for bits in bit_lengths:
+        # zaokraglamy w gore do pelnych bajtow (impl. bajtowa)
+        n_bytes = max(1, (bits + 7) // 8)
+        data = os.urandom(n_bytes)  # losowe dane danej dlugosci
+        digest = sha256(data)
+        digest_bits = len(digest) * 4  # 1 znak hex = 4 bity
+        ok = "OK" if digest_bits == 256 else "BLAD"
+        print(f'{bits:>12} {n_bytes:>14} {digest_bits:>18}   {digest}  [{ok}]')
+
+    print("-" * 110)
+
+
+    # 4) Porownanie czasu: wlasna implementacja vs hashlib
+    import time
+
+    print()
+    print("Porownanie czasu generowania pojedynczego skrotu:")
+    print(f'{"rozmiar wejscia":<20} {"moja [ms]":>14} {"hashlib [ms]":>16} {"stosunek":>12}')
+    print("-" * 70)
+
+    sizes = [
+        ("11 B (hello world)", b"hello world", 2000),
+        ("64 B (1 blok)",      b"a" * 64,      2000),
+        ("1 KB",               b"a" * 1024,    500),
+        ("10 KB",              b"a" * 10240,   100),
+        ("100 KB",             b"a" * 102400,  20),
+    ]
+
+    for label, data, repeats in sizes:
+        t0 = time.perf_counter()
+        for _ in range(repeats):
+            sha256(data)
+        my_ms = (time.perf_counter() - t0) / repeats * 1000
+
+        t0 = time.perf_counter()
+        for _ in range(repeats):
+            hashlib.sha256(data).hexdigest()
+        lib_ms = (time.perf_counter() - t0) / repeats * 1000
+
+        ratio = my_ms / lib_ms if lib_ms > 0 else float('inf')
+        print(f'{label:<20} {my_ms:>14.4f} {lib_ms:>16.4f} {ratio:>11.0f}x')
+
+    print("-" * 70)
